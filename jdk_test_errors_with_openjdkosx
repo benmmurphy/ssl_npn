@@ -1,0 +1,38 @@
+openjdk version "1.7.0-b213"
+
+#Errors
+
+Tests are grouped by their final status message.
+Program `sh' interrupted! (timed out?)
+
+    ssl/sun/net/www/protocol/https/HttpsURLConnection/PostThruProxy.sh : Need to rebase all the duplicated classes from Merlin
+    ssl/sun/net/www/protocol/https/HttpsURLConnection/PostThruProxyWithAuth.sh : Need to rebase all the duplicated classes from Merlin 
+
+Test ignored: After run the test manually, at the end of the debug output, if "MainThread, called close()" found, the test passed. Otherwise, if "Keep-Alive-Timer: called close()", the test failed.
+
+    ssl/sun/net/www/protocol/https/HttpsURLConnection/CloseKeepAliveCached.java : SSL client sessions do not close cleanly 
+
+Test ignored: JSSE supported cipher suites are changed with CR 6916074, need to update this test case in JDK 7 soon
+
+    ssl/javax/net/ssl/NewAPIs/SSLEngine/TestAllSuites.java : Add non-blocking SSL/TLS functionality, usable with any I/O abstraction Iterate through all the suites using both TLS and SSLv3, and turn SSLv2Hello off and on
+    ssl/sanity/ciphersuites/CheckCipherSuites.java : Check enabled and supported ciphersuites are correct 
+
+Test ignored: JSSE supported cipher suites are changed with CR 6916074, need to update this test case in JDK 7 soon This is intended to test many of the basic API calls to the SSLEngine interface. This doesn't really exercise much of the SSL code.
+
+    ssl/javax/net/ssl/NewAPIs/SSLEngine/Basics.java : Add non-blocking SSL/TLS functionality, usable with any I/O abstraction 
+
+Test ignored: JSSE supports algorithm constraints with CR 6916074, need to update this test case in JDK 7 soon
+
+    ssl/com/sun/net/ssl/internal/ssl/X509TrustManagerImpl/ClientServer.java : 1.0.3 JsseX509TrustManager erroneously calls isClientTrusted() 
+
+Test ignored: JSSE supports algorithm constraints with CR 6916074, need to update this test case in JDK 7 soon This is a serious hack job!
+
+    ssl/javax/net/ssl/NewAPIs/CheckMyTrustedKeystore.java : Need better way of reflecting the reason when a chain is rejected as untrusted. 
+
+
+#Failed
+
+Execution failed: `main' threw exception: java.lang.Exception: test failed, caught exception: java.net.SocketException: Invalid argument
+
+    ssl/com/sun/net/ssl/internal/ssl/SSLSocketImpl/NewSocketMethods.java : need to sync up SSL sockets with merlin java.net changes 
+
