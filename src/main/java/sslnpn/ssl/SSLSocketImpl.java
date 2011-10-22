@@ -368,6 +368,12 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
      */
     private ProtocolVersion     protocolVersion = ProtocolVersion.DEFAULT;
 
+    private NextProtocolNegotiationChooserUsingRawBytes npnChooser = null;
+    
+    protected byte[][] advertisedNpnProtocols = null;
+    
+    private byte[] negotiatedNextProtocol;
+    
     /* Class and subclass dynamic debugging support */
     private static final Debug debug = Debug.getInstance("ssl");
 
@@ -473,13 +479,15 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
             CipherSuiteList suites, byte clientAuth,
             boolean sessionCreation, ProtocolList protocols,
             String identificationProtocol,
-            AlgorithmConstraints algorithmConstraints) throws IOException {
+            AlgorithmConstraints algorithmConstraints,
+            byte[][] advertisedNpnProtocols) throws IOException {
 
         super();
         doClientAuth = clientAuth;
         enableSessionCreation = sessionCreation;
         this.identificationProtocol = identificationProtocol;
         this.algorithmConstraints = algorithmConstraints;
+        this.advertisedNpnProtocols = advertisedNpnProtocols;
         init(context, serverMode);
 
         /*
@@ -980,10 +988,11 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
                         serverVerifyData = handshaker.getServerVerifyData();
 
                         sess = handshaker.getSession();
+                        this.negotiatedNextProtocol = handshaker.getNegotiatedNextProtocol();
+
                         handshakeSession = null;
                         handshaker = null;
                         connectionState = cs_DATA;
-
                         //
                         // Tell folk about handshake completion, but do
                         // it in a separate thread.
@@ -1212,12 +1221,14 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
             handshaker = new ServerHandshaker(this, sslContext,
                     enabledProtocols, doClientAuth,
                     protocolVersion, connectionState == cs_HANDSHAKE,
-                    secureRenegotiation, clientVerifyData, serverVerifyData);
+                    secureRenegotiation, clientVerifyData, serverVerifyData,
+                    this.advertisedNpnProtocols);
         } else {
             handshaker = new ClientHandshaker(this, sslContext,
                     enabledProtocols,
                     protocolVersion, connectionState == cs_HANDSHAKE,
-                    secureRenegotiation, clientVerifyData, serverVerifyData);
+                    secureRenegotiation, clientVerifyData, serverVerifyData,
+                    this.npnChooser);
         }
         handshaker.setEnabledCipherSuites(enabledCipherSuites);
         handshaker.setEnableSessionCreation(enableSessionCreation);
@@ -2490,4 +2501,26 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
 
         return retval.toString();
     }
+    
+    public void setNpnChooser(NextProtocolNegotiationChooserUsingRawBytes chooser) {
+    	this.npnChooser = chooser;
+    }
+    
+    public void setNpnChooser(NextProtocolNegotiationChooser chooser) {
+    	if (chooser == null) {
+    		this.npnChooser = null;
+    	} else {
+    		this.npnChooser = new NextProtocolNegotiationChooserAdapter(chooser);
+    	}
+    }
+    
+    
+    public byte[] getNegotiatedNextProtocolAsBytes() {
+    	return this.negotiatedNextProtocol;
+    }
+    
+    public String getNegotiatedNextProtocol() {
+    	return NextProtocolEncoder.decodeProtocol(this.negotiatedNextProtocol);
+    }
+
 }

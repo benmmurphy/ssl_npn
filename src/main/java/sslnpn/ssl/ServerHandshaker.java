@@ -40,6 +40,9 @@ import javax.net.ssl.*;
 
 import javax.security.auth.Subject;
 
+import sslnpn.ssl.HandshakeMessage.ClientHello;
+import sslnpn.ssl.HandshakeMessage.NextProtocol;
+import sslnpn.ssl.HandshakeMessage.ServerHello;
 import sslnpn.ssl.HandshakeMessage.*;
 import sslnpn.ssl.CipherSuite.*;
 import sslnpn.ssl.SignatureAndHashAlgorithm.*;
@@ -94,6 +97,11 @@ final class ServerHandshaker extends Handshaker {
     // the preferable signature algorithm used by ServerKeyExchange message
     SignatureAndHashAlgorithm preferableSignatureAlgorithm;
 
+    private byte[][] advertisedNpnProtocols;
+    
+    private boolean sentNpnHello = false;
+    
+    
     /*
      * Constructor ... use the keys found in the auth context.
      */
@@ -101,13 +109,15 @@ final class ServerHandshaker extends Handshaker {
             ProtocolList enabledProtocols, byte clientAuth,
             ProtocolVersion activeProtocolVersion, boolean isInitialHandshake,
             boolean secureRenegotiation,
-            byte[] clientVerifyData, byte[] serverVerifyData) {
+            byte[] clientVerifyData, byte[] serverVerifyData,
+            byte[][] advertisedNpnProtocols) {
 
         super(socket, context, enabledProtocols,
                 (clientAuth != SSLEngineImpl.clauth_none), false,
                 activeProtocolVersion, isInitialHandshake, secureRenegotiation,
                 clientVerifyData, serverVerifyData);
         doClientAuth = clientAuth;
+        this.advertisedNpnProtocols = advertisedNpnProtocols;
     }
 
     /*
@@ -117,13 +127,15 @@ final class ServerHandshaker extends Handshaker {
             ProtocolList enabledProtocols, byte clientAuth,
             ProtocolVersion activeProtocolVersion,
             boolean isInitialHandshake, boolean secureRenegotiation,
-            byte[] clientVerifyData, byte[] serverVerifyData) {
+            byte[] clientVerifyData, byte[] serverVerifyData,
+            byte[][] advertisedNpnProtocols) {
 
         super(engine, context, enabledProtocols,
                 (clientAuth != SSLEngineImpl.clauth_none), false,
                 activeProtocolVersion, isInitialHandshake, secureRenegotiation,
                 clientVerifyData, serverVerifyData);
         doClientAuth = clientAuth;
+        this.advertisedNpnProtocols = advertisedNpnProtocols;
     }
 
     /*
@@ -135,6 +147,21 @@ final class ServerHandshaker extends Handshaker {
         doClientAuth = clientAuth;
     }
 
+    private boolean isValidHandshakeMessage(byte type) {
+    	if (state <= type) {
+    		return true;
+    	}
+    	
+    	if (state == HandshakeMessage.ht_client_key_exchange && type == HandshakeMessage.ht_certificate_verify) {
+    		return true;
+    	}
+    	
+    	if (state == HandshakeMessage.ht_next_protocol && type == HandshakeMessage.ht_finished) {
+    		return true;
+    	}
+    	
+    	return false;
+    }
     /*
      * This routine handles all the server side handshake messages, one at
      * a time.  Given the message type (and in some cases the pending cipher
@@ -146,19 +173,25 @@ final class ServerHandshaker extends Handshaker {
      */
     void processMessage(byte type, int message_len)
             throws IOException {
+    	
         //
         // In SSLv3 and TLS, messages follow strictly increasing
         // numerical order _except_ for one annoying special case.
         //
-        if ((state > type)
-                && (state != HandshakeMessage.ht_client_key_exchange
-                    && type != HandshakeMessage.ht_certificate_verify)) {
+    	if ((state > type)
+    			&& (state != HandshakeMessage.ht_client_key_exchange
+    			&& type != HandshakeMessage.ht_certificate_verify)) {
             throw new SSLProtocolException(
                     "Handshake message sequence violation, state = " + state
                     + ", type = " + type);
         }
 
         switch (type) {
+        	case HandshakeMessage.ht_next_protocol:
+        		NextProtocol nextProtocol = new NextProtocol(input);
+        		this.nextProtocol(nextProtocol);
+        		break;
+        		
             case HandshakeMessage.ht_client_hello:
                 ClientHello ch = new ClientHello(input, message_len);
                 /*
@@ -255,13 +288,27 @@ final class ServerHandshaker extends Handshaker {
         // cert verify messages; not a problem so long as all of
         // them actually check out.
         //
-        if (state < type && type != HandshakeMessage.ht_certificate_verify) {
-            state = type;
-        }
+        
+        nextState(type);
     }
 
 
-    /*
+    private void nextState(int type) {
+    	if (state < type && type != HandshakeMessage.ht_certificate_verify && type != HandshakeMessage.ht_next_protocol) {
+    		state = type;
+    	}
+    }
+    private void nextProtocol(NextProtocol nextProtocol) throws IOException {
+		if (this.sentNpnHello) {
+			this.negotiatedNextProtocol = nextProtocol.getSelectedProtocol();
+		} else {                                             
+			fatalSE(Alerts.alert_handshake_failure,
+					"Unexpected message");
+		}
+		
+	}
+
+	/*
      * ClientHello presents the server with a bunch of options, to which the
      * server replies with a ServerHello listing the ones which this session
      * will use.  If needed, it also writes its Certificate plus in some cases
@@ -297,6 +344,9 @@ final class ServerHandshaker extends Handshaker {
             }
         }
 
+        
+        boolean npnIndicated = handleNpnExtension(mesg);
+        
         // check the "renegotiation_info" extension
         RenegotiationInfoExtension clientHelloRI = (RenegotiationInfoExtension)
                     mesg.extensions.get(ExtensionType.EXT_RENEGOTIATION_INFO);
@@ -654,6 +704,8 @@ final class ServerHandshaker extends Handshaker {
             m1.extensions.add(serverHelloRI);
         }
 
+        addNpnExtensionsToServerHelo(npnIndicated, m1);
+        
         if (debug != null && Debug.isOn("handshake")) {
             m1.print(System.out);
             System.out.println("Cipher suite:  " + session.getSuite());
@@ -868,7 +920,36 @@ final class ServerHandshaker extends Handshaker {
         output.flush();
     }
 
-    /*
+    private void addNpnExtensionsToServerHelo(boolean npnIndicated,
+			ServerHello hello) {
+    	if (npnIndicated && this.advertisedNpnProtocols != null) {
+    		HelloExtension npn = new NextProtocolNegotiationExtension(this.advertisedNpnProtocols);
+        
+    		hello.extensions.add(npn);
+    		this.sentNpnHello = true;
+    	}
+		
+	}
+
+	private boolean handleNpnExtension(ClientHello mesg) throws IOException {
+        NextProtocolNegotiationExtension npn = (NextProtocolNegotiationExtension)
+                mesg.extensions.get(ExtensionType.EXT_NEXT_PROTOTOCOL_NEGOTIATION);
+        
+        if (npn == null) {
+        	return false;
+        } else {
+			if (npn.getExtensionData().length != 0) {
+				fatalSE(Alerts.alert_handshake_failure,
+						"The extension_data field for next protocol negotiation is not empty");
+			}
+
+			return true;
+		}
+		
+		
+	}
+
+	/*
      * Choose cipher suite from among those supported by client. Sets
      * the cipherSuite and keyExchange variables.
      */
@@ -1449,6 +1530,10 @@ final class ServerHandshaker extends Handshaker {
            session.getPeerPrincipal();
         }
 
+        if (this.sentNpnHello && this.negotiatedNextProtocol == null) {
+            fatalSE(Alerts.alert_handshake_failure,
+                    "client did not send a next protocol message");
+        }
         /*
          * Verify if client did send clientCertificateVerify message following
          * the client Certificate, otherwise server should not proceed
@@ -1515,17 +1600,12 @@ final class ServerHandshaker extends Handshaker {
     private void sendChangeCipherAndFinish(boolean finishedTag)
             throws IOException {
 
-        output.flush();
-
-        Finished mesg = new Finished(protocolVersion, handshakeHash,
-            Finished.SERVER, session.getMasterSecret(), cipherSuite);
-
         /*
          * Send the change_cipher_spec record; then our Finished handshake
          * message will be the last handshake message.  Flush, and now we
          * are ready for application data!!
          */
-        sendChangeCipherSpec(mesg, finishedTag);
+        Finished mesg = sendChangeCipherSpec(null, protocolVersion, handshakeHash, Finished.SERVER, session.getMasterSecret(), cipherSuite, finishedTag);
 
         /*
          * save server verify data for secure renegotiation

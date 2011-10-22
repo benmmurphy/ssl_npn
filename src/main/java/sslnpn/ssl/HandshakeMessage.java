@@ -87,6 +87,8 @@ public abstract class HandshakeMessage {
 
     static final byte   ht_finished = 20;
 
+    static final byte ht_next_protocol = 67;
+    
     /* Class and subclass dynamic debugging support */
     public static final Debug debug = Debug.getInstance("ssl");
 
@@ -218,7 +220,7 @@ static final class ClientHello extends HandshakeMessage {
     private final static byte[]  NULL_COMPRESSION = new byte[] {0};
 
     ClientHello(SecureRandom generator, ProtocolVersion protocolVersion,
-            SessionId sessionId, CipherSuiteList cipherSuites) {
+            SessionId sessionId, CipherSuiteList cipherSuites, boolean sendNpn) {
 
         this.protocolVersion = protocolVersion;
         this.sessionId = sessionId;
@@ -229,6 +231,9 @@ static final class ClientHello extends HandshakeMessage {
             extensions.add(SupportedEllipticPointFormatsExtension.DEFAULT);
         }
 
+        if (sendNpn) {
+        	extensions.add(NextProtocolNegotiationExtension.DEFAULT);
+        }
         clnt_random = new RandomCookie(generator);
         compression_methods = NULL_COMPRESSION;
     }
@@ -1504,7 +1509,63 @@ class ServerHelloDone extends HandshakeMessage
     }
 }
 
+static final class NextProtocol extends HandshakeMessage {
 
+	private byte[] selected_protocol;
+	private byte[] padding;
+	
+	NextProtocol() {
+		
+	}
+	
+	NextProtocol(HandshakeInStream input) throws IOException  {
+		this.selected_protocol = input.getBytes8();
+		this.padding = input.getBytes8();
+	}
+
+
+	public NextProtocol(byte[] selected_protocol) {
+		this.selected_protocol = selected_protocol;
+		int paddingLen = 32 - ((selected_protocol.length + 2) % 32);
+		
+		this.padding = new byte[paddingLen];
+		
+	}
+	
+	@Override
+	int messageType() {
+		return ht_next_protocol;
+	}
+	
+	public byte[] getSelectedProtocol() {
+		return selected_protocol;
+	}
+
+	@Override
+	int messageLength() {
+		return 1 + selected_protocol.length + 1 + padding.length;
+	}
+
+	@Override
+	void send(HandshakeOutStream s) throws IOException {
+		s.putBytes8(selected_protocol);
+		s.putBytes8(padding);
+		
+	}
+	
+	
+
+	@Override
+	void print(PrintStream p) throws IOException {
+		p.println("*** NextProtocol");
+        if (debug != null && Debug.isOn("verbose")) {
+            Debug.println(p, "selected_protocol", selected_protocol);
+            p.println("***");
+        }
+		
+	}
+	
+}
 /*
  * CertificateVerify ... CLIENT --> SERVER
  *

@@ -63,7 +63,7 @@ import javax.net.ssl.SSLParameters;
  *
  * @author David Brownell
  */
-final
+public final
 class SSLServerSocketImpl extends SSLServerSocket
 {
     private SSLContextImpl      sslContext;
@@ -92,6 +92,8 @@ class SSLServerSocketImpl extends SSLServerSocket
     // The cryptographic algorithm constraints
     private AlgorithmConstraints    algorithmConstraints = null;
 
+    private byte[][] advertisedNpnProtocols = null;
+    
     /**
      * Create an SSL server socket on a port, using a non-default
      * authentication context and a specified connection backlog.
@@ -312,7 +314,8 @@ class SSLServerSocketImpl extends SSLServerSocket
     public Socket accept() throws IOException {
         SSLSocketImpl s = new SSLSocketImpl(sslContext, useServerMode,
             enabledCipherSuites, doClientAuth, enableSessionCreation,
-            enabledProtocols, identificationProtocol, algorithmConstraints);
+            enabledProtocols, identificationProtocol, algorithmConstraints,
+            advertisedNpnProtocols);
 
         implAccept(s);
         s.doneConnect();
@@ -324,5 +327,15 @@ class SSLServerSocketImpl extends SSLServerSocket
      */
     public String toString() {
         return "[SSL: "+ super.toString() + "]";
+    }
+    
+
+    public void setAdvertisedNextProtocols(byte[]... protocols) {
+    	NextProtocolEncoder.validateProtocols(protocols);
+    	this.advertisedNpnProtocols = protocols;
+    }
+    
+    public void setAdvertisedNextProtocols(String... protocols) {
+    	setAdvertisedNextProtocols(NextProtocolEncoder.encodeProtocols(protocols));
     }
 }

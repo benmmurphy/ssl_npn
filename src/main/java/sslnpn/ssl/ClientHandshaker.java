@@ -44,6 +44,7 @@ import javax.net.ssl.*;
 
 import javax.security.auth.Subject;
 
+import sslnpn.ssl.HandshakeMessage.ServerHello;
 import sslnpn.ssl.HandshakeMessage.*;
 import sslnpn.ssl.CipherSuite.*;
 import static sslnpn.ssl.CipherSuite.KeyExchange.*;
@@ -88,6 +89,9 @@ final class ClientHandshaker extends Handshaker {
      */
     private ProtocolVersion maxProtocolVersion;
 
+    private NextProtocolNegotiationChooserUsingRawBytes npnChooser;
+    
+    
     // To switch off the SNI extension.
     private final static boolean enableSNIExtension =
             Debug.getBooleanProperty("jsse.enableSNIExtension", true);
@@ -99,22 +103,26 @@ final class ClientHandshaker extends Handshaker {
             ProtocolList enabledProtocols,
             ProtocolVersion activeProtocolVersion,
             boolean isInitialHandshake, boolean secureRenegotiation,
-            byte[] clientVerifyData, byte[] serverVerifyData) {
-
+            byte[] clientVerifyData, byte[] serverVerifyData,
+            NextProtocolNegotiationChooserUsingRawBytes npnChooser) {
         super(socket, context, enabledProtocols, true, true,
             activeProtocolVersion, isInitialHandshake, secureRenegotiation,
             clientVerifyData, serverVerifyData);
+    	this.npnChooser = npnChooser;
+
     }
 
     ClientHandshaker(SSLEngineImpl engine, SSLContextImpl context,
             ProtocolList enabledProtocols,
             ProtocolVersion activeProtocolVersion,
             boolean isInitialHandshake, boolean secureRenegotiation,
-            byte[] clientVerifyData, byte[] serverVerifyData) {
+            byte[] clientVerifyData, byte[] serverVerifyData,
+            NextProtocolNegotiationChooserUsingRawBytes npnChooser) {
 
         super(engine, context, enabledProtocols, true, true,
             activeProtocolVersion, isInitialHandshake, secureRenegotiation,
             clientVerifyData, serverVerifyData);
+        this.npnChooser = npnChooser;
     }
 
     /*
@@ -553,6 +561,8 @@ final class ClientHandshaker extends Handshaker {
                 }
             }
         }
+        
+        processNextProtocolNegotiationExtension(mesg);
 
         if (resumingSession && session != null) {
             if (protocolVersion.v >= ProtocolVersion.TLS12.v) {
@@ -569,7 +579,8 @@ final class ClientHandshaker extends Handshaker {
             if ((type != ExtensionType.EXT_ELLIPTIC_CURVES)
                     && (type != ExtensionType.EXT_EC_POINT_FORMATS)
                     && (type != ExtensionType.EXT_SERVER_NAME)
-                    && (type != ExtensionType.EXT_RENEGOTIATION_INFO)) {
+                    && (type != ExtensionType.EXT_RENEGOTIATION_INFO)
+                    && (type != ExtensionType.EXT_NEXT_PROTOTOCOL_NEGOTIATION)) {
                 fatalSE(Alerts.alert_unsupported_extension,
                     "Server sent an unsupported extension: " + type);
             }
@@ -585,7 +596,34 @@ final class ClientHandshaker extends Handshaker {
         }
     }
 
-    /*
+	private void processNextProtocolNegotiationExtension(ServerHello mesg) throws IOException {
+		NextProtocolNegotiationExtension npne = (NextProtocolNegotiationExtension) mesg.extensions
+				.get(ExtensionType.EXT_NEXT_PROTOTOCOL_NEGOTIATION);
+		if (npne != null) {
+			if (this.sendNpnExtension()) {
+			    List<byte[]> data = npne.getExtensionDataDecoded();
+			    if (data == null) {
+			        fatalSE(Alerts.alert_handshake_failure,
+			                "next protocol not formatted correctly");
+			    } else {
+			        
+			        byte[] chosenProtocol = this.npnChooser.chooseProtocol(data);
+			        if (chosenProtocol == null) {
+			            fatalSE(Alerts.alert_handshake_failure,
+			                    "no supported protocol");
+			            
+			        } else {
+			            this.negotiatedNextProtocol = chosenProtocol;
+			        }
+			    }
+			} else {
+                fatalSE(Alerts.alert_handshake_failure,
+                        "received next protocol extension unexpectedly");
+			}
+		}
+	}
+
+	/*
      * Server's own key was either a signing-only key, or was too
      * large for export rules ... this message holds an ephemeral
      * RSA key to use for key exchange.
@@ -1003,7 +1041,8 @@ final class ClientHandshaker extends Handshaker {
     }
 
 
-    /*
+
+	/*
      * "Finished" is the last handshake message sent.  If we got this
      * far, the MAC has been validated post-decryption.  We validate
      * the two hashes here as an additional sanity check, protecting
@@ -1063,6 +1102,16 @@ final class ClientHandshaker extends Handshaker {
     }
 
 
+    private NextProtocol createNextProtocolMessage() {
+
+        if (this.sendNpnExtension()) {
+            return new NextProtocol(this.negotiatedNextProtocol);
+        } else {
+            return null;
+        }
+        
+   
+    }
     /*
      * Send my change-cipher-spec and Finished message ... done as the
      * last handshake act in either the short or long sequences.  In
@@ -1071,8 +1120,8 @@ final class ClientHandshaker extends Handshaker {
      */
     private void sendChangeCipherAndFinish(boolean finishedTag)
             throws IOException {
-        Finished mesg = new Finished(protocolVersion, handshakeHash,
-            Finished.CLIENT, session.getMasterSecret(), cipherSuite);
+        
+        NextProtocol nextProtocol = createNextProtocolMessage();
 
         /*
          * Send the change_cipher_spec message, then the Finished message
@@ -1080,7 +1129,8 @@ final class ClientHandshaker extends Handshaker {
          * calculated).  Server responds with its Finished message, except
          * in the "fast handshake" (resume session) case.
          */
-        sendChangeCipherSpec(mesg, finishedTag);
+        Finished mesg = sendChangeCipherSpec(nextProtocol, protocolVersion, handshakeHash, Finished.CLIENT, session.getMasterSecret(), cipherSuite, 
+        		finishedTag);
 
         /*
          * save client verify data for secure renegotiation
@@ -1228,7 +1278,7 @@ final class ClientHandshaker extends Handshaker {
         // create the ClientHello message
         ClientHello clientHelloMessage = new ClientHello(
                 sslContext.getSecureRandom(), maxProtocolVersion,
-                sessionId, cipherSuites);
+                sessionId, cipherSuites, sendNpnExtension());
 
         // add signature_algorithm extension
         if (maxProtocolVersion.v >= ProtocolVersion.TLS12.v) {
@@ -1275,6 +1325,10 @@ final class ClientHandshaker extends Handshaker {
 
         return clientHelloMessage;
     }
+
+	private boolean sendNpnExtension() {
+		return isInitialHandshake && this.npnChooser != null;
+	}
 
     /*
      * Fault detected during handshake.
@@ -1338,4 +1392,7 @@ final class ClientHandshaker extends Handshaker {
         }
         session.setPeerCertificates(peerCerts);
     }
+    
+
+
 }

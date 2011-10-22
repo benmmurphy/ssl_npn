@@ -27,7 +27,6 @@ package sslnpn.ssl;
 
 import java.io.*;
 import java.nio.*;
-import java.nio.ReadOnlyBufferException;
 import java.util.LinkedList;
 import java.security.*;
 
@@ -216,8 +215,8 @@ final public class SSLEngineImpl extends SSLEngine {
 
     /*
      * Flag indicating if the next record we receive MUST be a Finished
-     * message. Temporarily set during the handshake to ensure that
-     * a change cipher spec message is followed by a finished message.
+     * message (or a next protocol message followed by a Finished message). Temporarily set during the handshake to ensure that
+     * a change cipher spec message is followed by a finished message (or a next protocol message followed by a Finished message).
      */
     private boolean             expectingFinished;
 
@@ -311,6 +310,9 @@ final public class SSLEngineImpl extends SSLEngine {
     private Object              unwrapLock;
     Object                      writeLock;
 
+    private byte[][] advertisedNpnProtocols;
+    private byte[] negotiatedNextProtocol;
+    private NextProtocolNegotiationChooserUsingRawBytes npnChooser;
     /*
      * Class and subclass dynamic debugging support
      */
@@ -456,12 +458,14 @@ final public class SSLEngineImpl extends SSLEngine {
             handshaker = new ServerHandshaker(this, sslContext,
                     enabledProtocols, doClientAuth,
                     protocolVersion, connectionState == cs_HANDSHAKE,
-                    secureRenegotiation, clientVerifyData, serverVerifyData);
+                    secureRenegotiation, clientVerifyData, serverVerifyData,
+                    advertisedNpnProtocols);
         } else {
             handshaker = new ClientHandshaker(this, sslContext,
                     enabledProtocols,
                     protocolVersion, connectionState == cs_HANDSHAKE,
-                    secureRenegotiation, clientVerifyData, serverVerifyData);
+                    secureRenegotiation, clientVerifyData, serverVerifyData,
+                    npnChooser);
         }
         handshaker.setEnabledCipherSuites(enabledCipherSuites);
         handshaker.setEnableSessionCreation(enableSessionCreation);
@@ -1014,7 +1018,7 @@ final public class SSLEngineImpl extends SSLEngine {
                      * a finished message.
                      */
                     handshaker.process_record(inputRecord, expectingFinished);
-                    expectingFinished = false;
+                    
 
                     if (handshaker.invalidated) {
                         handshaker = null;
@@ -1022,6 +1026,8 @@ final public class SSLEngineImpl extends SSLEngine {
                         if (connectionState == cs_RENEGOTIATE) {
                             connectionState = cs_DATA;
                         }
+                        expectingFinished = false;
+
                     } else if (handshaker.isDone()) {
                         // reset the parameters for secure renegotiation.
                         secureRenegotiation =
@@ -1034,8 +1040,11 @@ final public class SSLEngineImpl extends SSLEngine {
                         if (!writer.hasOutboundData()) {
                             hsStatus = HandshakeStatus.FINISHED;
                         }
+                        this.negotiatedNextProtocol = handshaker.getNegotiatedNextProtocol();
                         handshaker = null;
                         connectionState = cs_DATA;
+
+                        expectingFinished = false;
 
                         // No handshakeListeners here.  That's a
                         // SSLSocket thing.
@@ -2069,5 +2078,36 @@ final public class SSLEngineImpl extends SSLEngine {
         retval.append("]");
 
         return retval.toString();
+    }
+    
+	
+	public void setAdvertisedNextProtocols(byte[]... advertisedNpnProtocols) {
+		NextProtocolEncoder.validateProtocols(advertisedNpnProtocols);
+		this.advertisedNpnProtocols = advertisedNpnProtocols;
+	}
+	
+	public void setAdvertisedNextProtocols(String...advertisedNpnProtocols) {
+		setAdvertisedNextProtocols(NextProtocolEncoder.encodeProtocols(advertisedNpnProtocols));
+
+	}
+
+	public String getNegotiatedNextProtocol() {
+		return NextProtocolEncoder.decodeProtocol(negotiatedNextProtocol);
+	}
+	
+	public byte[] getNegotiatedNextProtocolAsBytes() {
+		return this.negotiatedNextProtocol;
+	}
+
+    public void setNpnChooser(NextProtocolNegotiationChooserUsingRawBytes chooser) {
+        this.npnChooser = chooser;
+    }
+    
+    public void setNpnChooser(NextProtocolNegotiationChooser chooser) {
+        if (chooser == null) {
+            this.npnChooser = null;
+        } else {
+            this.npnChooser = new NextProtocolNegotiationChooserAdapter(chooser);
+        }
     }
 }

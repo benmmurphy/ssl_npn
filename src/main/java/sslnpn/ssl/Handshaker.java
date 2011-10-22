@@ -29,12 +29,6 @@ package sslnpn.ssl;
 import java.io.*;
 import java.util.*;
 import java.security.*;
-import java.security.NoSuchAlgorithmException;
-import java.security.AccessController;
-import java.security.AlgorithmConstraints;
-import java.security.AccessControlContext;
-import java.security.PrivilegedExceptionAction;
-import java.security.PrivilegedActionException;
 
 import javax.crypto.*;
 import javax.crypto.spec.*;
@@ -182,6 +176,8 @@ abstract class Handshaker {
     // need to dispose the object when it is invalidated
     boolean invalidated;
 
+    protected byte[] negotiatedNextProtocol;
+    
     Handshaker(SSLSocketImpl c, SSLContextImpl context,
             ProtocolList enabledProtocols, boolean needCertVerify,
             boolean isClient, ProtocolVersion activeProtocolVersion,
@@ -935,10 +931,16 @@ abstract class Handshaker {
      * Sends a change cipher spec message and updates the write side
      * cipher state so that future messages use the just-negotiated spec.
      */
-    void sendChangeCipherSpec(Finished mesg, boolean lastMessage)
+    Finished sendChangeCipherSpec(NextProtocol nextProtocol, 
+    		ProtocolVersion protcolVersion,
+    		HandshakeHash handshakeHash,
+    		int finished,
+    		SecretKey masterSecret,
+    		CipherSuite cipherSuite,
+    		boolean lastMessage)
             throws IOException {
 
-        output.flush(); // i.e. handshake data
+    	output.flush(); // i.e. handshake data
 
         /*
          * The write cipher state is protected by the connection write lock
@@ -960,11 +962,24 @@ abstract class Handshaker {
         r.setVersion(protocolVersion);
         r.write(1);     // single byte of data
 
+        Finished mesg;
         if (conn != null) {
             conn.writeLock.lock();
             try {
                 conn.writeRecord(r);
                 conn.changeWriteCiphers();
+
+                if (nextProtocol != null) {
+                    if (debug != null && Debug.isOn("handshake")) {
+                    	nextProtocol.print(System.out);
+                    }
+                	nextProtocol.write(output);
+                }
+                
+                output.flush();
+
+                mesg = new Finished(protocolVersion, handshakeHash,
+                        finished, masterSecret, cipherSuite);
                 if (debug != null && Debug.isOn("handshake")) {
                     mesg.print(System.out);
                 }
@@ -975,8 +990,23 @@ abstract class Handshaker {
             }
         } else {
             synchronized (engine.writeLock) {
+
+                
                 engine.writeRecord((EngineOutputRecord)r);
                 engine.changeWriteCiphers();
+
+                if (nextProtocol != null) {
+                    if (debug != null && Debug.isOn("handshake")) {
+                    	nextProtocol.print(System.out);
+                    }
+                	nextProtocol.write(output);
+                }
+                
+                output.flush();
+                
+                mesg = new Finished(protocolVersion, handshakeHash,
+                        finished, masterSecret, cipherSuite);
+                
                 if (debug != null && Debug.isOn("handshake")) {
                     mesg.print(System.out);
                 }
@@ -988,6 +1018,8 @@ abstract class Handshaker {
                 output.flush();
             }
         }
+        
+        return mesg;
     }
 
     /*
@@ -1382,5 +1414,9 @@ abstract class Handshaker {
                 }
             }
         }
+    }
+    
+    public byte[] getNegotiatedNextProtocol() {
+    	return negotiatedNextProtocol;
     }
 }

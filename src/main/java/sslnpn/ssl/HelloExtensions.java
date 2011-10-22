@@ -88,6 +88,8 @@ final class HelloExtensions {
                         new SupportedEllipticPointFormatsExtension(s, extlen);
             } else if (extType == ExtensionType.EXT_RENEGOTIATION_INFO) {
                 extension = new RenegotiationInfoExtension(s, extlen);
+            } else if (extType == ExtensionType.EXT_NEXT_PROTOTOCOL_NEGOTIATION) {
+            	extension = new NextProtocolNegotiationExtension(s, extlen);
             } else {
                 extension = new UnknownExtension(s, extlen, extType);
             }
@@ -225,6 +227,9 @@ final class ExtensionType {
     // extensions defined in RFC 5746
     final static ExtensionType EXT_RENEGOTIATION_INFO =
             e(0xff01, "renegotiation_info");     // IANA registry value: 65281
+    
+    final static ExtensionType EXT_NEXT_PROTOTOCOL_NEGOTIATION =
+    		e(13172, "next_protocol_negotiation");
 }
 
 abstract class HelloExtension {
@@ -681,6 +686,62 @@ final class SupportedEllipticPointFormatsExtension extends HelloExtension {
     }
 }
 
+final class NextProtocolNegotiationExtension extends HelloExtension {
+	public static final HelloExtension DEFAULT = new NextProtocolNegotiationExtension(new byte[0]);
+	
+	private final byte[] next_protocol_extension_data;
+	
+
+	NextProtocolNegotiationExtension(byte[][] nextProtocols) {
+		this(NextProtocolEncoder.encodeProtocols(nextProtocols));
+	} 
+	NextProtocolNegotiationExtension(byte[] next_protocol_extension_data) {
+		super(ExtensionType.EXT_NEXT_PROTOTOCOL_NEGOTIATION);
+		this.next_protocol_extension_data = next_protocol_extension_data;
+	}
+	
+	NextProtocolNegotiationExtension(HandshakeInStream s, int len)
+            throws IOException {
+		super(ExtensionType.EXT_NEXT_PROTOTOCOL_NEGOTIATION);
+
+		
+        next_protocol_extension_data = new byte[len];
+        if (len != 0) {
+            s.read(next_protocol_extension_data);
+        }
+
+        
+	}
+	
+	byte[] getExtensionData() {
+		return next_protocol_extension_data;
+	}
+	
+    void send(HandshakeOutStream s) throws IOException {
+        s.putInt16(type.id);
+        s.putBytes16(next_protocol_extension_data);
+    }
+
+	@Override
+	int length() {
+        return 4 + next_protocol_extension_data.length;
+	}
+
+	@Override
+	public String toString() {
+        return "Extension " + type + ", next_protocol_negotiation: " +
+                (next_protocol_extension_data.length == 0 ? "<empty>" :
+                Debug.toString(next_protocol_extension_data));
+	}
+	
+	public List<byte[]> getExtensionDataDecoded() {
+		return NextProtocolEncoder.decodeProtocols(this.next_protocol_extension_data);
+	}
+
+        
+
+    
+}
 /*
  * For secure renegotiation, RFC5746 defines a new TLS extension,
  * "renegotiation_info" (with extension type 0xff01), which contains a
