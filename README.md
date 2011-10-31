@@ -3,6 +3,12 @@
 This provides next protocol negotiation support for java. It is based off the openjdk ssl provider. 
 
 http://tools.ietf.org/html/draft-agl-tls-nextprotoneg-00.html
+http://tools.ietf.org/html/draft-agl-tls-nextprotoneg-02
+https://technotes.googlecode.com/git/nextprotoneg.html
+
+# Download
+
+https://github.com/downloads/benmmurphy/ssl_npn/ssl_npn-0.1-SNAPSHOT.jar
 
 # Using
 
