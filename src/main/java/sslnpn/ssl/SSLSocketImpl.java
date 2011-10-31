@@ -2505,7 +2505,15 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
     public void setNpnChooser(NextProtocolNegotiationChooserUsingRawBytes chooser) {
     	this.npnChooser = chooser;
     }
-    
+   
+    public void setNextProtocolNegotiationChoices(String... choices) {
+        this.npnChooser = new NextProtocolNegotiationChooserWithFallback(null, choices);
+    }
+
+    public void setNextProtocolNegotiationFallbackAndChoices(String fallback, String... choices) {
+        this.npnChooser = new NextProtocolNegotiationChooserWithFallback(fallback, choices);
+    }
+
     public void setNpnChooser(NextProtocolNegotiationChooser chooser) {
     	if (chooser == null) {
     		this.npnChooser = null;

@@ -148,19 +148,11 @@ final class ServerHandshaker extends Handshaker {
     }
 
     private boolean isValidHandshakeMessage(byte type) {
-    	if (state <= type) {
-    		return true;
-    	}
-    	
-    	if (state == HandshakeMessage.ht_client_key_exchange && type == HandshakeMessage.ht_certificate_verify) {
-    		return true;
-    	}
-    	
-    	if (state == HandshakeMessage.ht_next_protocol && type == HandshakeMessage.ht_finished) {
-    		return true;
-    	}
-    	
-    	return false;
+        boolean invalid = (state > type)
+        && (state != HandshakeMessage.ht_client_key_exchange
+        && type != HandshakeMessage.ht_certificate_verify);
+        
+        return !invalid;
     }
     /*
      * This routine handles all the server side handshake messages, one at
@@ -178,9 +170,7 @@ final class ServerHandshaker extends Handshaker {
         // In SSLv3 and TLS, messages follow strictly increasing
         // numerical order _except_ for one annoying special case.
         //
-    	if ((state > type)
-    			&& (state != HandshakeMessage.ht_client_key_exchange
-    			&& type != HandshakeMessage.ht_certificate_verify)) {
+    	if (!isValidHandshakeMessage(type)) {
             throw new SSLProtocolException(
                     "Handshake message sequence violation, state = " + state
                     + ", type = " + type);

@@ -1,9 +1,7 @@
 package sslnpn;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -11,29 +9,20 @@ import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.security.KeyManagementException;
-import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
-import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
-import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLServerSocketFactory;
 import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.TrustManager;
 
 import org.junit.Before;
 import org.junit.Test;
 
-import sslnpn.OpenSSLCompatabilityTest.Chooser;
-import sslnpn.OpenSSLCompatabilityTest.SpawnSSLClient;
 import sslnpn.ssl.SSLEngineImpl;
-import sslnpn.ssl.SSLSocketImpl;
 
 public class ExamplesTest {
 
@@ -41,29 +30,29 @@ public class ExamplesTest {
 
     @Before
     public void before() throws Exception {
+        System.setProperty("javax.net.debug", "all");
         context = newContext();
     }
 
     /* just testing the examples in README.md compile */
 
-    
+   
+    @Test 
     public void testClient() throws Exception {
         SSLSocketFactory factory = context.getSocketFactory();
         sslnpn.ssl.SSLSocketImpl socket = (sslnpn.ssl.SSLSocketImpl) factory.createSocket();
-        socket.setNpnChooser(new sslnpn.ssl.NextProtocolNegotiationChooser() {
-            @Override
-            public String chooseProtocol(List<String> protocols) {
-                if (protocols.contains("spdy/2")) {
-                    return "spdy/2";
-                } else {
-                    /* you can also return null here to bail the connection */
-                    return "http/1.1";
-                }
-            }
-        });
+        socket.setNextProtocolNegotiationFallbackAndChoices("http/1.1", "spdy/2", "http/1.1");
+        
+        /* can also use null for the fallback to cause a failure during handshake if the selected protcol is not available */
+        socket.setNextProtocolNegotiationFallbackAndChoices(null, "spdy/2", "http/1.1");
 
-        socket.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), 443));
+        /* can also use the following which will cause a failure during handshake if the selected protocol is not available  */
+        socket.setNextProtocolNegotiationChoices("spdy/2", "http/1.1");
+
+        socket.connect(new InetSocketAddress(InetAddress.getByName("www.google.com"), 443));
+        socket.startHandshake();
         String protocol = socket.getNegotiatedNextProtocol();
+        assertEquals("spdy/2", protocol);
     }
 
     public void testServer() throws Exception {
@@ -82,28 +71,25 @@ public class ExamplesTest {
 
     }
 
+    @Test
     public void testClientEngine() throws Exception {
         SocketChannel socket = SocketChannel.open();
-        socket.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), 443));
+        socket.connect(new InetSocketAddress("www.google.com", 443));
 
         sslnpn.ssl.SSLEngineImpl engine = (sslnpn.ssl.SSLEngineImpl) context.createSSLEngine();
+        engine.setNextProtocolNegotiationFallbackAndChoices("http/1.1", "spdy/2", "http/1.1");
 
-        engine.setNpnChooser(new sslnpn.ssl.NextProtocolNegotiationChooser() {
-            @Override
-            public String chooseProtocol(List<String> protocols) {
-                if (protocols.contains("spdy/2")) {
-                    return "spdy/2";
-                } else {
-                    /* you can also return null here to bail the connection */
-                    return "http/1.1";
-                }
-            }
-        });
+        /* can also use null for the fallback to cause a failure during handshake if the selected protcol is not available */
+        engine.setNextProtocolNegotiationFallbackAndChoices(null, "spdy/2", "http/1.1");
+
+        /* can also use the following which will cause a failure during handshake if the selected protocol is not available */
+        engine.setNextProtocolNegotiationChoices("spdy/2", "http/1.1");                       
 
         engine.setUseClientMode(true);
 
         negotiateHandshake(engine, socket);
         String protocol = engine.getNegotiatedNextProtocol();
+        assertEquals("spdy/2", protocol);
     }
 
    
@@ -121,8 +107,8 @@ public class ExamplesTest {
 
     }
 
-    private void negotiateHandshake(SSLEngineImpl engine, SocketChannel socket) {
-
+    private void negotiateHandshake(SSLEngineImpl engine, SocketChannel socket) throws SSLException, IOException {
+        SSLEngineHandshaker.negotiateHandshake(engine, socket);
     }
 
     private SSLContext newContext() throws NoSuchAlgorithmException, KeyManagementException, KeyStoreException,

@@ -2110,4 +2110,13 @@ final public class SSLEngineImpl extends SSLEngine {
             this.npnChooser = new NextProtocolNegotiationChooserAdapter(chooser);
         }
     }
+
+    public void setNextProtocolNegotiationChoices(String... choices) {
+        this.npnChooser = new NextProtocolNegotiationChooserWithFallback(null, choices);
+    }
+
+    public void setNextProtocolNegotiationFallbackAndChoices(String fallback, String... choices) {
+        this.npnChooser = new NextProtocolNegotiationChooserWithFallback(fallback, choices);
+    }
+
 }
