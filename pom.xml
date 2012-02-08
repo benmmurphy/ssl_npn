@@ -4,7 +4,7 @@
   <groupId>name.ben.murphy</groupId>
   <artifactId>ssl_npn</artifactId>
   <packaging>jar</packaging>
-  <version>0.1-SNAPSHOT</version>
+  <version>0.2-SNAPSHOT</version>
   <name>SSL NPN</name>
   <dependencies>
     <dependency>
