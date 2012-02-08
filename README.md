@@ -99,3 +99,7 @@ after realising it doesn't understand the protocol.
    has been selected or not. Though, I'm not sure if this is really important.
 3. Think about removing handlers that take String and only leave custom byte[] handlers. It is convenient to deal with but it doesn't feel right because US-ASCII maps
    multiple bytes to the same characters.
+
+# Issues
+
+testCreateSSLClientEngineWithOpenSSL(sslnpn.OpenSSLCompatabilityTest) fails unless JCE full strength is installed. so probably a bug somewhere in the implementation :(
