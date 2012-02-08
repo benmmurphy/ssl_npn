@@ -8,7 +8,7 @@ https://technotes.googlecode.com/git/nextprotoneg.html
 
 # Download
 
-https://github.com/downloads/benmmurphy/ssl_npn/ssl_npn-0.1-SNAPSHOT.jar
+https://github.com/downloads/benmmurphy/ssl_npn/ssl_npn-0.2-SNAPSHOT.jar
 
 # Using
 
