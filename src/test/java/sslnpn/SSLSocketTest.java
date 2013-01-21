@@ -31,7 +31,7 @@ public class SSLSocketTest {
         try {
             clientSocket.setNextProtocolNegotiationFallbackAndChoices("spdy/3", "spdy/3");
 
-            clientSocket.connect(new InetSocketAddress(portAndFuture.port));
+            clientSocket.connect(new InetSocketAddress("127.0.0.1", portAndFuture.port));
             clientSocket.startHandshake();
             assertEquals("spdy/3", clientSocket.getNegotiatedNextProtocol());
             assertEquals("spdy/3", portAndFuture.future.get());

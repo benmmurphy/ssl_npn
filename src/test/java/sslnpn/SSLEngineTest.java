@@ -31,7 +31,7 @@ public class SSLEngineTest {
         SSLEngineImpl engine = (SSLEngineImpl) context.createSSLEngine();
         SocketChannel channel = SocketChannel.open();
         try {
-            channel.connect(new InetSocketAddress(portAndFuture.port));
+            channel.connect(new InetSocketAddress("127.0.0.1", portAndFuture.port));
             engine.setNextProtocolNegotiationFallbackAndChoices("spdy/3", "spdy/3");
             engine.setUseClientMode(true);
             SSLEngineHandshaker.negotiateHandshake(engine, channel);
